@@ -126,15 +126,15 @@ CoolingBuffer::flush()
     if (this->_layer_id < gg.config.disable_fan_first_layers)
         fan_speed = 0;
     
-    gcode = gg.writer.set_fan(fan_speed) + gcode;
+    ///gcode = gg.writer.set_fan(fan_speed) + gcode;
     
     // bridge fan speed
     if (!gg.config.cooling || gg.config.bridge_fan_speed == 0 || this->_layer_id < gg.config.disable_fan_first_layers) {
         boost::replace_all(gcode, ";_BRIDGE_FAN_START", "");
         boost::replace_all(gcode, ";_BRIDGE_FAN_END", "");
     } else {
-        boost::replace_all(gcode, ";_BRIDGE_FAN_START", gg.writer.set_fan(gg.config.bridge_fan_speed, true));
-        boost::replace_all(gcode, ";_BRIDGE_FAN_END",   gg.writer.set_fan(fan_speed, true));
+        ///boost::replace_all(gcode, ";_BRIDGE_FAN_START", gg.writer.set_fan(gg.config.bridge_fan_speed, true));
+        ///boost::replace_all(gcode, ";_BRIDGE_FAN_END",   gg.writer.set_fan(fan_speed, true));
     }
     boost::replace_all(gcode, ";_WIPE", "");
     boost::replace_all(gcode, ";_EXTRUDE_SET_SPEED", "");

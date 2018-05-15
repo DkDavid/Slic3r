@@ -7,12 +7,20 @@
 
 #define FLAVOR_IS(val) this->config.gcode_flavor == val
 #define FLAVOR_IS_NOT(val) this->config.gcode_flavor != val
-#define COMMENT(comment) if (this->config.gcode_comments && !comment.empty()) gcode << " ; " << comment;
+#define COMMENT(comment) if (this->config.gcode_comments && !comment.empty()) gcode << " ( " << comment;
 #define PRECISION(val, precision) std::fixed << std::setprecision(precision) << val
 #define XYZF_NUM(val) PRECISION(val, 3)
 #define E_NUM(val) PRECISION(val, 5)
 
 namespace Slic3r {
+
+void 
+GCodeWriter::makeComment() 
+{
+    if(FLAVOR_IS(gcfLaser))
+        return "(";
+    return ";";
+}
 
 void
 GCodeWriter::apply_print_config(const PrintConfig &print_config)
@@ -41,33 +49,35 @@ GCodeWriter::notes()
     // Write the contents of the three notes sections
     // a semicolon at the beginning of each line.
     if (this->config.notes.getString().size() > 0) {
-        gcode << "; Print Config Notes: \n";
-        std::vector<std::string> temp_line = split_at_regex(this->config.notes.getString(),"\n");
+        gcode << this->makeComment()
+              << " Print Config Notes: \r\n";
+        std::vector<std::string> temp_line = split_at_regex(this->config.notes.getString(),"\r\n");
         for (auto j = temp_line.cbegin(); j != temp_line.cend(); j++) {
-            gcode << "; " << *j << "\n";
+            gcode << "; " << *j << "\r\n";
         }
-        gcode << "; \n";
+        gcode << "; \r\n";
     }
 
     for (auto i = this->config.filament_notes.values.cbegin(); i != this->config.filament_notes.values.cend(); i++) {
         if (i->size() > 0) {
-            gcode << "; Filament notes: \n";
-            std::vector<std::string> temp_line = split_at_regex(*i,"\n");
+            gcode << "; Filament notes: \r\n";
+            std::vector<std::string> temp_line = split_at_regex(*i,"\r\n");
             for (auto j = temp_line.cbegin(); j != temp_line.cend(); j++) {
-                gcode << "; " << *j << "\n";
+                gcode << "; " << *j << "\r\n";
             }
-            gcode << "; \n";
+            gcode << "; \r\n";
         }
     }
 
     if (this->config.printer_notes.getString().size() > 0) {
-        gcode << "; Printer Config Notes: \n";
-        std::vector<std::string> temp_line = split_at_regex(this->config.printer_notes.getString(),"\n");
+        gcode << "; Printer Config Notes: \r\n";
+        std::vector<std::string> temp_line = split_at_regex(this->config.printer_notes.getString(),"\r\n");
         for (auto j = temp_line.cbegin(); j != temp_line.cend(); j++) {
-            gcode << "; " << *j << "\n";
+            gcode << "; " << *j << "\r\n";
         }
-        gcode << "; \n";
+        gcode << "; \r\n";
     }
+
 
     return gcode.str();
 }
@@ -79,14 +89,15 @@ GCodeWriter::preamble()
     std::ostringstream gcode;
 
     if (FLAVOR_IS_NOT(gcfMakerWare)) {
-        gcode << "G21 ; set units to millimeters\n";
-        gcode << "G90 ; use absolute coordinates\n";
+        //gcode << "G21 ; set units to millimeters\r\n";
+        gcode << "G90 ; use absolute coordinates\r\n";
+        gcode << "G94 G161 F600 ; Grundeinstellungen für Laser\r\n"; //Alex
     }
     if (FLAVOR_IS(gcfRepRap) || FLAVOR_IS(gcfTeacup) || FLAVOR_IS(gcfRepetier) || FLAVOR_IS(gcfSmoothie)) {
         if (this->config.use_relative_e_distances) {
-            gcode << "M83 ; use relative distances for extrusion\n";
+            gcode << "M83 ; use relative distances for extrusion\r\n";
         } else {
-            gcode << "M82 ; use absolute distances for extrusion\n";
+            gcode << "M82 ; use absolute distances for extrusion\r\n";
         }
         gcode << this->reset_e(true);
     }
@@ -100,15 +111,18 @@ GCodeWriter::postamble() const
 {
     std::ostringstream gcode;
     if (FLAVOR_IS(gcfMachinekit))
-          gcode << "M2 ; end of program\n";
+          gcode << "M2 ; end of program\r\n";
     return gcode.str();
 }
 
 std::string
-GCodeWriter::set_temperature(unsigned int temperature, bool wait, int tool) const
+GCodeWriter::set_temperature(unsigned int temperature, bool wait, int tool) const //Rausgeworfen im GCodeWriter.hpp!! (AB)
 {
+    if(FLAVOR_IS(gcfLaser))
+        return "";
     wait = this->config.use_set_and_wait_extruder ? true : wait;
-    std::string code, comment;
+    std::string code, comment; 
+    
     if (wait && FLAVOR_IS_NOT(gcfTeacup) && FLAVOR_IS_NOT(gcfMakerWare) && FLAVOR_IS_NOT(gcfSailfish)) {
         code = "M109";
         comment = "set temperature and wait for it to be reached";
@@ -128,20 +142,23 @@ GCodeWriter::set_temperature(unsigned int temperature, bool wait, int tool) cons
     if (tool != -1 && (this->multiple_extruders || FLAVOR_IS(gcfMakerWare) || FLAVOR_IS(gcfSailfish))) {
         gcode << " T" << tool;
     }
-    gcode << " ; " << comment << "\n";
+    gcode << " ( " << comment << "\r\n";
     
     if (FLAVOR_IS(gcfTeacup) && wait)
-        gcode << "M116 ; wait for temperature to be reached\n";
+        gcode << "M116 ; wait for temperature to be reached\r\n";
     
     if (wait && tool !=-1 && (FLAVOR_IS(gcfMakerWare) || FLAVOR_IS(gcfSailfish)))
-        gcode << "M6 T" << tool << " ; wait for temperature to be reached\n";
+        gcode << "M6 T" << tool << " ( wait for temperature to be reached\r\n";
     
+    code = "\r\n";
     return gcode.str();
 }
 
 std::string
-GCodeWriter::set_bed_temperature(unsigned int temperature, bool wait) const
+GCodeWriter::set_bed_temperature(unsigned int temperature, bool wait) const//Rausgeworfen im GCodeWriter.hpp!! (AB)
 {
+    if(FLAVOR_IS(gcfLaser))
+        return "";
     std::string code, comment;
     wait = this->config.use_set_and_wait_bed ? true : wait;
     if (wait && FLAVOR_IS_NOT(gcfTeacup)) {
@@ -163,18 +180,20 @@ GCodeWriter::set_bed_temperature(unsigned int temperature, bool wait) const
     } else {
         gcode << "S";
     }
-    gcode << temperature << " ; " << comment << "\n";
+    gcode << temperature << " ( " << comment << "\r\n";
     
     if (FLAVOR_IS(gcfTeacup) && wait)
-        gcode << "M116 ; wait for bed temperature to be reached\n";
-    
+        gcode << "M116 ; wait for bed temperature to be reached\r\n";
     return gcode.str();
 }
 
 std::string
-GCodeWriter::set_fan(unsigned int speed, bool dont_save)
+GCodeWriter::set_fan(unsigned int speed, bool dont_save)//Rausgeworfen im GCodeWriter.hpp!! (AB)
 {
+    if(FLAVOR_IS(gcfLaser))
+        return "";
     std::ostringstream gcode;
+    
     if (this->_last_fan_speed != speed || dont_save) {
         if (!dont_save) this->_last_fan_speed = speed;
         
@@ -186,8 +205,8 @@ GCodeWriter::set_fan(unsigned int speed, bool dont_save)
             } else {
                 gcode << "M107";
             }
-            if (this->config.gcode_comments) gcode << " ; disable fan";
-            gcode << "\n";
+            if (this->config.gcode_comments) gcode << " ( disable fan";
+            gcode << "\r\n";
         } else {
             if (FLAVOR_IS(gcfMakerWare) || FLAVOR_IS(gcfSailfish)) {
                 gcode << "M126";
@@ -200,8 +219,8 @@ GCodeWriter::set_fan(unsigned int speed, bool dont_save)
                 }
                 gcode << (255.0 * speed / 100.0);
             }
-            if (this->config.gcode_comments) gcode << " ; enable fan";
-            gcode << "\n";
+            if (this->config.gcode_comments) gcode << " ( enable fan";
+            gcode << "\r\n";
         }
     }
     return gcode.str();
@@ -210,6 +229,9 @@ GCodeWriter::set_fan(unsigned int speed, bool dont_save)
 std::string
 GCodeWriter::set_acceleration(unsigned int acceleration)
 {
+    if(FLAVOR_IS(gcfLaser))
+        return "";
+
     if (acceleration == 0 || acceleration == this->_last_acceleration)
         return "";
     
@@ -218,8 +240,8 @@ GCodeWriter::set_acceleration(unsigned int acceleration)
     std::ostringstream gcode;
     if (FLAVOR_IS(gcfRepetier) || (FLAVOR_IS(gcfRepRap))) {
         gcode << "M201 X" << acceleration << " Y" << acceleration;
-        if (this->config.gcode_comments) gcode << " ; adjust acceleration";
-        gcode << "\n";
+        if (this->config.gcode_comments) gcode << " ( adjust acceleration";
+        gcode << "\r\n";
     }
     if (FLAVOR_IS(gcfRepetier)) {
         gcode << "M202 X" << acceleration << " Y" << acceleration;
@@ -228,9 +250,8 @@ GCodeWriter::set_acceleration(unsigned int acceleration)
     } else {
         gcode << "M204 S" << acceleration;
     }
-    if (this->config.gcode_comments) gcode << " ; adjust acceleration";
-    gcode << "\n";
-    
+    if (this->config.gcode_comments) gcode << " ( adjust acceleration";
+    gcode << "\r\n";
     return gcode.str();
 }
 
@@ -239,7 +260,8 @@ GCodeWriter::reset_e(bool force)
 {
     if (FLAVOR_IS(gcfMach3)
         || FLAVOR_IS(gcfMakerWare)
-        || FLAVOR_IS(gcfSailfish))
+        || FLAVOR_IS(gcfSailfish)
+        || FLAVOR_IS(gcfLaser))
         return "";
     
     if (this->_extruder != NULL) {
@@ -250,8 +272,8 @@ GCodeWriter::reset_e(bool force)
     if (!this->_extrusion_axis.empty() && !this->config.use_relative_e_distances) {
         std::ostringstream gcode;
         gcode << "G92 " << this->_extrusion_axis << "0";
-        if (this->config.gcode_comments) gcode << " ; reset extrusion distance";
-        gcode << "\n";
+        if (this->config.gcode_comments) gcode << " ( reset extrusion distance";
+        gcode << "\r\n";
         return gcode.str();
     } else {
         return "";
@@ -269,8 +291,8 @@ GCodeWriter::update_progress(unsigned int num, unsigned int tot, bool allow_100)
     
     std::ostringstream gcode;
     gcode << "M73 P" << percent;
-    if (this->config.gcode_comments) gcode << " ; update progress";
-    gcode << "\n";
+    if (this->config.gcode_comments) gcode << " ( update progress";
+    gcode << "\r\n";
     return gcode.str();
 }
 
@@ -306,8 +328,8 @@ GCodeWriter::toolchange(unsigned int extruder_id)
             gcode << "T";
         }
         gcode << extruder_id;
-        if (this->config.gcode_comments) gcode << " ; change extruder";
-        gcode << "\n";
+        if (this->config.gcode_comments) gcode << " ( change extruder";
+        gcode << "\r\n";
         
         gcode << this->reset_e(true);
     }
@@ -322,7 +344,7 @@ GCodeWriter::set_speed(double F, const std::string &comment,
     gcode << "G1 F" << F;
     COMMENT(comment);
     gcode << cooling_marker;
-    gcode << "\n";
+    gcode << "\r\n";
     return gcode.str();
 }
 
@@ -337,7 +359,7 @@ GCodeWriter::travel_to_xy(const Pointf &point, const std::string &comment)
           <<   " Y" << XYZF_NUM(point.y)
           <<   " F" << XYZF_NUM(this->config.travel_speed.value * 60.0);
     COMMENT(comment);
-    gcode << "\n";
+    gcode << " M46\r\n";
     return gcode.str();
 }
 
@@ -365,7 +387,7 @@ GCodeWriter::travel_to_xyz(const Pointf3 &point, const std::string &comment)
           <<   " Z" << XYZF_NUM(point.z)
           <<   " F" << XYZF_NUM(this->config.travel_speed.value * 60.0);
     COMMENT(comment);
-    gcode << "\n";
+    gcode << " M46\r\n";
     return gcode.str();
 }
 
@@ -396,7 +418,7 @@ GCodeWriter::_travel_to_z(double z, const std::string &comment)
     gcode << "G1 Z" << XYZF_NUM(z)
           <<   " F" << XYZF_NUM(this->config.travel_speed.value * 60.0);
     COMMENT(comment);
-    gcode << "\n";
+    gcode << "\r\n";
     return gcode.str();
 }
 
@@ -424,9 +446,10 @@ GCodeWriter::extrude_to_xy(const Pointf &point, double dE, const std::string &co
     gcode << "G1 X" << XYZF_NUM(point.x)
           <<   " Y" << XYZF_NUM(point.y)
          // <<    " " << this->_extrusion_axis << E_NUM(this->_extruder->E);
-          << " M45" << "\n M46";
+          << " M45";
+
     COMMENT(comment);
-    gcode << "\n";
+    gcode << "\r\n";
     return gcode.str();
 }
 
@@ -440,11 +463,12 @@ GCodeWriter::extrude_to_xyz(const Pointf3 &point, double dE, const std::string &
     std::ostringstream gcode;
     gcode << "G1 X" << XYZF_NUM(point.x)
           <<   " Y" << XYZF_NUM(point.y)
-          <<   " Z" << XYZF_NUM(point.z)
-          //<<    " " << this->_extrusion_axis << E_NUM(this->_extruder->E);
-          << " M45" << "\n M46";
+          <<   " Z" << XYZF_NUM(point.z);
+          if(FLAVOR_IS_NOT(gcfLaser))
+            gcode <<    " " << this->_extrusion_axis << E_NUM(this->_extruder->E);
+          gcode << " M45";
     COMMENT(comment);
-    gcode << "\n";
+    gcode << "\r\n";
     return gcode.str();
 }
 
@@ -502,16 +526,16 @@ GCodeWriter::_retract(double length, double restart_extra, const std::string &co
                 gcode << "G10";
         } else {
             gcode << "G1 " << this->_extrusion_axis << E_NUM(this->_extruder->E)
-                           << " F" << this->_extruder->retract_speed_mm_min;
+                           << " F Sollte nicht erscheinen" << this->_extruder->retract_speed_mm_min;
         }
         COMMENT(outcomment.str());
-        gcode << "\n";
+        gcode << "\r\n";
     }
     
     if (FLAVOR_IS(gcfMakerWare))
-        gcode << "M103 ; extruder off\n";
-    
-    return gcode.str();
+        gcode << "M103 ; extruder off\r\n";
+    return "";
+    //return gcode.str();
 }
 
 std::string
@@ -520,7 +544,7 @@ GCodeWriter::unretract()
     std::ostringstream gcode;
     
     if (FLAVOR_IS(gcfMakerWare))
-        gcode << "M101 ; extruder on\n";
+        gcode << "M101 ; extruder on\r\n";
     
     double dE = this->_extruder->unretract();
     if (dE != 0) {
@@ -529,19 +553,19 @@ GCodeWriter::unretract()
                  gcode << "G23";
             else
                  gcode << "G11";
-            if (this->config.gcode_comments) gcode << " ; unretract extruder " << this->_extruder->id;
-            gcode << "\n";
+            if (this->config.gcode_comments) gcode << " ( unretract extruder " << this->_extruder->id;
+            gcode << "\r\n";
             gcode << this->reset_e();
         } else {
             // use G1 instead of G0 because G0 will blend the restart with the previous travel move
             gcode << "G1 " << this->_extrusion_axis << E_NUM(this->_extruder->E)
-                           << " F" << this->_extruder->retract_speed_mm_min;
-            if (this->config.gcode_comments) gcode << " ; unretract extruder " << this->_extruder->id;
-            gcode << "\n";
+                           << " F Sollte nicht erscheinen 2" << this->_extruder->retract_speed_mm_min;
+            if (this->config.gcode_comments) gcode << " ( unretract extruder " << this->_extruder->id;
+            gcode << "\r\n";
         }
     }
-    
-    return gcode.str();
+    return "";
+    //return gcode.str();
 }
 
 /*  If this method is called more than once before calling unlift(),
